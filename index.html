@@ -45,7 +45,7 @@
     // ========================================================================
     // KONFIGURASI API (WAJIB DIISI)
     // ========================================================================
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxm_0xWB2qMDVc6lyu3M9VteOUd6MxRqvJvmsXQVHFqR2GescLumjZAMvXgDbBrDwfvdQ/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxak0Ba_PhvMncA63sHhXQcuXkoFSzpzLQB1phMpqeXOZnCtu5-7T8208rRzLfGc-rCkg/exec";
 
     // Fungsi Fetch API Pengganti google.script.run
     const callApi = async (action, data = {}) => {
@@ -114,6 +114,15 @@
       const [aiLoading, setAiLoading] = useState({});
       const [tpForm, setTpForm] = useState({ id: '', mapel: '', rombel: 'Semua', semester: '1', deskripsi: '' });
       const [showTpModal, setShowTpModal] = useState(false);
+      
+      const [aiTpSuggestions, setAiTpSuggestions] = useState([]);
+      const [isGeneratingTp, setIsGeneratingTp] = useState(false);
+      const [selectedAiTps, setSelectedAiTps] = useState([]);
+
+      const [bulkState, setBulkState] = useState({ isRunning: false, total: 0, current: 0 });
+      const bulkCancelRef = React.useRef(false);
+
+      const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, message: '', onConfirm: null });
 
       const [selectedRombel, setSelectedRombel] = useState('Semua');
       const [selectedSemester, setSelectedSemester] = useState('1');
@@ -168,6 +177,14 @@
       }, []);
 
       useEffect(() => { setCurrentPage(1); }, [searchTerm, selectedRombel, selectedSemester, itemsPerPage]);
+
+      const showConfirm = (message, onConfirmCallback) => {
+          setConfirmDialog({ isOpen: true, message, onConfirm: onConfirmCallback });
+      };
+
+      const closeConfirm = () => {
+          setConfirmDialog({ isOpen: false, message: '', onConfirm: null });
+      };
 
       useEffect(() => {
         if (auth && auth.role === 'Siswa') {
@@ -302,12 +319,13 @@
       };
       
       const handleDeleteAcc = (username) => {
-         if(!confirm('Hapus akun ' + username + '?')) return;
-         setLoading(true);
-         callApi('manageAccountData', { actionObj: 'DELETE', payload: {username}, reqUser: loginUser, reqToken: sessionToken })
-         .then(res => {
-             setMessage({ type: res.success ? 'success' : 'error', text: res.message });
-             fetchDashboardData(loginUser, loginPass, false);
+         showConfirm('Hapus akun ' + username + ' secara permanen?', () => {
+             setLoading(true);
+             callApi('manageAccountData', { actionObj: 'DELETE', payload: {username}, reqUser: loginUser, reqToken: sessionToken })
+             .then(res => {
+                 setMessage({ type: res.success ? 'success' : 'error', text: res.message });
+                 fetchDashboardData(loginUser, loginPass, false);
+             });
          });
       };
       const handleSaveAcc = (e) => {
@@ -395,6 +413,12 @@
       // ==========================================
       // AI RAPOR & TP FUNCTIONS
       // ==========================================
+      
+      const getKelasLabel = (sem) => {
+          const s = parseInt(sem);
+          return s <= 2 ? 'Kelas 7' : s <= 4 ? 'Kelas 8' : 'Kelas 9';
+      };
+
       const handleSaveTP = (e) => {
           e.preventDefault();
           setLoading(true);
@@ -411,16 +435,44 @@
       };
 
       const deleteTP = (id) => {
-          if (!confirm('Hapus Tujuan Pembelajaran ini?')) return;
-          setLoading(true);
-          const newTpList = tpList.filter(t => t['ID_TP'] !== id);
-          const payloadTP = newTpList.map(t => ({ id: t['ID_TP'], mapel: t['Mata Pelajaran'], rombel: t['Kelas/Rombel'], semester: t['Semester'], deskripsi: t['Deskripsi Tujuan Pembelajaran'] }));
-          
-          callApi('saveTPData', { tpList: payloadTP, username: loginUser, sessionToken }).then(res => {
-              setLoading(false);
-              if (res.success) { setTpList(newTpList); setMessage({ type: 'success', text: res.message }); }
-              else setMessage({ type: 'error', text: res.message });
+          showConfirm('Hapus Tujuan Pembelajaran ini? Data AI mungkin tidak memiliki acuan deskripsi yang tepat jika TP kosong.', () => {
+              setLoading(true);
+              const newTpList = tpList.filter(t => t['ID_TP'] !== id);
+              const payloadTP = newTpList.map(t => ({ id: t['ID_TP'], mapel: t['Mata Pelajaran'], rombel: t['Kelas/Rombel'], semester: t['Semester'], deskripsi: t['Deskripsi Tujuan Pembelajaran'] }));
+              
+              callApi('saveTPData', { tpList: payloadTP, username: loginUser, sessionToken }).then(res => {
+                  setLoading(false);
+                  if (res.success) { setTpList(newTpList); setMessage({ type: 'success', text: res.message }); }
+                  else setMessage({ type: 'error', text: res.message });
+              });
           });
+      };
+
+      const handleGenerateTPAi = () => {
+          if (!tpForm.mapel || !tpForm.semester) {
+              setMessage({ type: 'error', text: 'Pilih Mata Pelajaran dan Semester terlebih dahulu untuk generate TP.' });
+              return;
+          }
+          setIsGeneratingTp(true); setAiTpSuggestions([]); setSelectedAiTps([]);
+          callApi('generateTPAi', { mapelAlias: tpForm.mapel, semester: tpForm.semester, username: loginUser, sessionToken }).then(res => {
+              setIsGeneratingTp(false);
+              if (res.success) {
+                  setAiTpSuggestions(res.data);
+                  setMessage({ type: 'success', text: res.message });
+              } else {
+                  setMessage({ type: 'error', text: res.message });
+              }
+          }).catch(e => {
+              setIsGeneratingTp(false);
+              setMessage({ type: 'error', text: e.message });
+          });
+      };
+
+      const appendSelectedTPs = () => {
+          const newTexts = selectedAiTps.map((text, idx) => `${tpForm.deskripsi ? '\n' : ''}${text}`).join('');
+          setTpForm(prev => ({ ...prev, deskripsi: prev.deskripsi + newTexts }));
+          setAiTpSuggestions([]);
+          setSelectedAiTps([]);
       };
 
       const handleGenerateAI = (nis, mapelAlias, semester) => {
@@ -437,6 +489,46 @@
           }).catch(e => {
               setAiLoading(p => ({...p, [key]: false}));
               setMessage({ type: 'error', text: e.message });
+          });
+      };
+
+      const handleBulkGenerate = () => {
+          const targets = [];
+          studentsInRombel.forEach(student => {
+             uniqueSubjects.forEach(subj => {
+                 const colName = `Sem${selectedSemester}_${subj}`;
+                 const nilaiSiswa = student[colName];
+                 const mapelAlias = getMapelAlias(subj);
+                 if (nilaiSiswa !== undefined && nilaiSiswa !== '' && !isNaN(nilaiSiswa)) {
+                      const existing = deskripsiList.find(d => String(d['NIS']) === String(student.NIS) && d['Mata Pelajaran'] === mapelAlias && String(d['Semester']) === String(selectedSemester));
+                      if (!existing) targets.push({ nis: student.NIS, mapelAlias, semester: selectedSemester });
+                 }
+             });
+          });
+
+          if (targets.length === 0) {
+             setMessage({ type: 'info', text: 'Semua capaian pada filter saat ini sudah digenerate / tidak ada nilai yang valid.' });
+             return;
+          }
+
+          showConfirm(`Terdapat ${targets.length} data yang belum memiliki capaian AI. Generate massal sekarang? Proses ini akan berjalan bertahap dan memakan waktu beberapa menit.`, async () => {
+             setBulkState({ isRunning: true, total: targets.length, current: 0 });
+             bulkCancelRef.current = false;
+
+             let successCount = 0;
+             for (let i = 0; i < targets.length; i++) {
+                 if (bulkCancelRef.current) break;
+                 const t = targets[i];
+                 setBulkState(prev => ({ ...prev, current: i + 1 }));
+                 try {
+                     await callApi('generateDeskripsiRapor', { nis: t.nis, mapel: t.mapelAlias, semester: t.semester, username: loginUser, sessionToken });
+                     successCount++;
+                 } catch (e) { console.error("Bulk error", e); }
+             }
+             
+             callApi('getDeskripsiData', { username: loginUser, sessionToken }).then(dRes => { if(dRes.success) setDeskripsiList(dRes.data); });
+             setBulkState({ isRunning: false, total: 0, current: 0 });
+             setMessage({ type: 'success', text: `Generate massal selesai. ${successCount} data berhasil diproses.` });
           });
       };
 
@@ -653,7 +745,26 @@
                 </div>
               )}
 
-              {}
+              {/* CUSTOM CONFIRM MODAL */}
+              {confirmDialog.isOpen && (
+                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 dark:border-slate-700 overflow-hidden text-center transform scale-100">
+                       <div className="p-6">
+                           <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 shadow-inner">
+                               <i className="fas fa-question"></i>
+                           </div>
+                           <h3 className="text-xl font-extrabold text-slate-800 dark:text-white mb-2">Konfirmasi</h3>
+                           <p className="text-slate-600 dark:text-slate-300 text-sm">{confirmDialog.message}</p>
+                       </div>
+                       <div className="flex bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-700">
+                           <button onClick={closeConfirm} className="flex-1 px-4 py-3.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors border-r border-slate-100 dark:border-slate-700 focus:outline-none">Batal</button>
+                           <button onClick={() => { if (confirmDialog.onConfirm) confirmDialog.onConfirm(); closeConfirm(); }} className="flex-1 px-4 py-3.5 text-sm font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors focus:outline-none">Ya, Lanjutkan</button>
+                       </div>
+                    </div>
+                 </div>
+              )}
+
+              {/* MODAL AKUN */}
               {showAccModal && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
                   <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[90vh]">
@@ -964,7 +1075,7 @@
                                    </p>
                                </div>
                                {showVerifButton && (
-                                   <button onClick={() => { if(confirm('Pastikan semua data sudah benar. Form nilai akan dikunci setelah ini. Lanjutkan?')) handleVerification(studentData.NIS, 'VERIF_SISWA') }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-sm transition-colors w-full sm:w-auto shrink-0"><i className="fas fa-check-double mr-2"></i> Semua Data Benar</button>
+                                   <button onClick={() => { showConfirm('Pastikan semua data sudah benar. Form nilai akan dikunci setelah ini. Lanjutkan?', () => handleVerification(studentData.NIS, 'VERIF_SISWA')) }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl shadow-sm transition-colors w-full sm:w-auto shrink-0"><i className="fas fa-check-double mr-2"></i> Semua Data Benar</button>
                                )}
                            </div>
                         )}
@@ -1120,7 +1231,7 @@
                                         const isReady = row['Verifikasi Siswa'] === 'Selesai' && row['Status Data'] === 'Lengkap';
                                         return <td key={h} className={baseClass + ' text-center'}>
                                            {vWali ? <span className="px-3 py-1 rounded-md text-xs font-bold bg-blue-100 text-blue-700"><i className="fas fa-check-double mr-1"></i> Final</span> 
-                                           : ( isReady ? <button onClick={() => { if(confirm('Validasi data '+row.NIS+'? Data akan terkunci permanen untuk siswa.')) handleVerification(row.NIS, 'VERIF_WALI') }} className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 rounded-md text-xs font-bold shadow-sm transition-colors animate-pulse hover:animate-none">Validasi</button>
+                                           : ( isReady ? <button onClick={() => { showConfirm('Validasi data '+row.NIS+'? Data akan terkunci permanen untuk siswa.', () => handleVerification(row.NIS, 'VERIF_WALI')) }} className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 rounded-md text-xs font-bold shadow-sm transition-colors animate-pulse hover:animate-none">Validasi</button>
                                            : <span className="text-xs font-semibold text-slate-400">-</span> )}
                                         </td>;
                                      }
@@ -1129,7 +1240,7 @@
                                    })}
                                    {auth.role === 'Admin' && (
                                      <td className="px-4 py-2 border-r border-slate-100 dark:border-slate-700 text-center">
-                                       <button onClick={() => { if(confirm('Reset seluruh status persetujuan untuk siswa ini?')) handleVerification(row.NIS, 'RESET_ADMIN') }} title="Reset Persetujuan" className="w-8 h-8 rounded-full bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-700 transition-colors focus:outline-none">
+                                       <button onClick={() => { showConfirm('Reset seluruh status persetujuan untuk siswa ini?', () => handleVerification(row.NIS, 'RESET_ADMIN')) }} title="Reset Persetujuan" className="w-8 h-8 rounded-full bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-700 transition-colors focus:outline-none">
                                          <i className="fas fa-undo"></i>
                                        </button>
                                      </td>
@@ -1249,41 +1360,69 @@
                     {/* Modal TP */}
                     {showTpModal && (
                         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-                            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col">
-                                <div className="flex justify-between items-center p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+                            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[90vh]">
+                                <div className="flex justify-between items-center p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 shrink-0">
                                     <h3 className="text-lg font-extrabold text-slate-800 dark:text-white">{tpForm.id ? 'Edit TP' : 'Tambah TP Baru'}</h3>
                                     <button onClick={() => setShowTpModal(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 focus:outline-none"><i className="fas fa-times text-xl"></i></button>
                                 </div>
-                                <form id="tpFormBody" onSubmit={handleSaveTP} className="p-5 space-y-4">
-                                    <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-3 rounded-lg text-xs font-semibold mb-4 border border-blue-100 dark:border-blue-800"><i className="fas fa-info-circle mr-2"></i>Pastikan Mapel dan Semester sesuai agar AI dapat melakukan pemetaan nilai dengan tepat.</div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 ml-1">Mata Pelajaran <span className="text-red-500">*</span></label>
-                                        <select required value={tpForm.mapel} onChange={e => setTpForm({...tpForm, mapel: e.target.value})} className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white transition-all font-bold">
-                                            <option value="">-- Pilih Mapel --</option>
-                                            {mapelConfig.map(m => <option key={m.alias} value={m.alias} className="bg-white dark:bg-slate-800 font-medium">{m.alias}</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
+                                <div className="p-5 overflow-y-auto flex-1 hide-scrollbar">
+                                    <form id="tpFormBody" onSubmit={handleSaveTP} className="space-y-4">
+                                        <div className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-3 rounded-lg text-xs font-semibold mb-4 border border-blue-100 dark:border-blue-800"><i className="fas fa-info-circle mr-2"></i>Pastikan Mapel dan Semester sesuai agar AI dapat melakukan pemetaan nilai dan kelas dengan tepat.</div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 ml-1">Mata Pelajaran <span className="text-red-500">*</span></label>
+                                                <select required value={tpForm.mapel} onChange={e => setTpForm({...tpForm, mapel: e.target.value})} className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white transition-all font-bold">
+                                                    <option value="">-- Pilih Mapel --</option>
+                                                    {mapelConfig.map(m => <option key={m.alias} value={m.alias} className="bg-white dark:bg-slate-800 font-medium">{m.alias}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 ml-1">Semester (Pemetaan Kelas) <span className="text-red-500">*</span></label>
+                                                <select required value={tpForm.semester} onChange={e => setTpForm({...tpForm, semester: e.target.value})} className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white font-bold transition-all">
+                                                    {[1,2,3,4,5,6].map(s => <option key={s} value={s} className="bg-white dark:bg-slate-800 font-medium">Semester {s} ({getKelasLabel(s)})</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
                                         <div>
-                                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 ml-1">Kelas/Rombel <span className="text-red-500">*</span></label>
+                                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 ml-1">Kelas/Rombel Khusus (Opsional) <span className="text-red-500">*</span></label>
                                             <select required value={tpForm.rombel} onChange={e => setTpForm({...tpForm, rombel: e.target.value})} className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white font-bold transition-all">
-                                                <option value="Semua" className="bg-white dark:bg-slate-800 font-medium">Semua Kelas</option>
-                                                {rombels.map(r => <option key={r} value={r} className="bg-white dark:bg-slate-800 font-medium">Kelas {r}</option>)}
+                                                <option value="Semua" className="bg-white dark:bg-slate-800 font-medium">Berlaku Semua Rombel pada Semester ini</option>
+                                                {rombels.map(r => <option key={r} value={r} className="bg-white dark:bg-slate-800 font-medium">Spesifik Kelas {r}</option>)}
                                             </select>
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 ml-1">Semester <span className="text-red-500">*</span></label>
-                                            <select required value={tpForm.semester} onChange={e => setTpForm({...tpForm, semester: e.target.value})} className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white font-bold transition-all">
-                                                {[1,2,3,4,5,6].map(s => <option key={s} value={s} className="bg-white dark:bg-slate-800 font-medium">Semester {s}</option>)}
-                                            </select>
+                                            <div className="flex justify-between items-end mb-1.5 ml-1">
+                                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Daftar Kompetensi / TP <span className="text-red-500">*</span></label>
+                                                <button type="button" onClick={handleGenerateTPAi} disabled={isGeneratingTp} className="text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 dark:text-purple-400 px-3 py-1.5 rounded-lg font-bold shadow-sm transition-colors focus:outline-none flex items-center">
+                                                    {isGeneratingTp ? <i className="fas fa-spinner fa-spin mr-1.5"></i> : <i className="fas fa-magic mr-1.5"></i>} Saran AI
+                                                </button>
+                                            </div>
+
+                                            {aiTpSuggestions.length > 0 && (
+                                                <div className="mb-4 bg-purple-50 dark:bg-slate-800 border border-purple-200 dark:border-purple-800 rounded-xl p-4 shadow-sm animate-in fade-in slide-in-from-top-2">
+                                                    <div className="text-xs font-bold text-purple-700 dark:text-purple-400 mb-3 flex items-center"><i className="fas fa-robot mr-2"></i> Pilih Rekomendasi AI (Centang yang sesuai):</div>
+                                                    <div className="space-y-2 mb-4">
+                                                        {aiTpSuggestions.map((sug, idx) => (
+                                                            <label key={idx} className="flex items-start gap-3 p-2 hover:bg-white dark:hover:bg-slate-900 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-purple-100 dark:hover:border-slate-700">
+                                                                <input type="checkbox" className="mt-1 w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer" checked={selectedAiTps.includes(sug)} onChange={(e) => {
+                                                                    if(e.target.checked) setSelectedAiTps(prev => [...prev, sug]);
+                                                                    else setSelectedAiTps(prev => prev.filter(item => item !== sug));
+                                                                }} />
+                                                                <span className="text-sm text-slate-700 dark:text-slate-300 leading-tight">{sug}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                    <button type="button" onClick={appendSelectedTPs} disabled={selectedAiTps.length === 0} className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs font-bold py-2 rounded-lg transition-colors">
+                                                        Tambahkan ({selectedAiTps.length}) ke Deskripsi
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            <textarea required rows="5" value={tpForm.deskripsi} onChange={e => setTpForm({...tpForm, deskripsi: e.target.value})} placeholder="Siswa mampu memahami struktur atom...&#10;Siswa mampu mendemonstrasikan..." className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white resize-none text-sm transition-all leading-relaxed"></textarea>
                                         </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1.5 ml-1">Daftar Kompetensi / TP <span className="text-red-500">*</span></label>
-                                        <textarea required rows="4" value={tpForm.deskripsi} onChange={e => setTpForm({...tpForm, deskripsi: e.target.value})} placeholder="1. Siswa mampu memahami struktur atom...&#10;2. Siswa mampu mendemonstrasikan..." className="w-full p-3 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white resize-none text-sm transition-all leading-relaxed"></textarea>
-                                    </div>
-                                </form>
-                                <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-end gap-3">
+                                    </form>
+                                </div>
+                                <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-end gap-3 shrink-0">
                                     <button onClick={() => setShowTpModal(false)} type="button" className="px-5 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 transition-colors">Batal</button>
                                     <button type="submit" form="tpFormBody" disabled={loading} className="px-5 py-2.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors flex items-center"><i className="fas fa-save mr-2"></i> Simpan TP</button>
                                 </div>
@@ -1296,7 +1435,28 @@
                 {}
                 {/* TAB: DESKRIPSI RAPOR AI (NEW) */}
                 {tab === 'rapor' && (
-                  <div className='p-4 sm:p-6 flex flex-col h-full flex-1 overflow-auto'>
+                  <div className='p-4 sm:p-6 flex flex-col h-full flex-1 overflow-auto relative'>
+                    {bulkState.isRunning && (
+                        <div className="absolute inset-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center p-6">
+                            <div className="bg-white dark:bg-slate-800 p-8 rounded-3xl shadow-2xl border border-purple-100 dark:border-purple-800 w-full max-w-md text-center">
+                                <div className="w-20 h-20 mx-auto bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mb-6">
+                                   <i className="fas fa-robot text-4xl text-purple-600 dark:text-purple-400 fa-bounce"></i>
+                                </div>
+                                <h3 className="text-xl font-black text-slate-800 dark:text-white mb-2">Memproses Rapor AI</h3>
+                                <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-6">Sistem sedang merangkai narasi akademik untuk siswa satu per satu...</p>
+                                
+                                <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 mb-3 overflow-hidden shadow-inner">
+                                    <div className="bg-gradient-to-r from-blue-500 to-purple-600 h-3 rounded-full transition-all duration-300" style={{width: `${(bulkState.current / bulkState.total) * 100}%`}}></div>
+                                </div>
+                                <div className="flex justify-between text-xs font-bold text-slate-500 dark:text-slate-400 mb-6">
+                                    <span>Memproses: {bulkState.current} / {bulkState.total}</span>
+                                    <span>{Math.round((bulkState.current / bulkState.total) * 100)}% Selesai</span>
+                                </div>
+                                <button onClick={() => { bulkCancelRef.current = true; }} className="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 px-6 py-2.5 rounded-xl font-bold transition-colors">Batalkan Antrean</button>
+                            </div>
+                        </div>
+                    )}
+
                     <div className='flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-4 shrink-0'>
                       <div className="w-full lg:w-auto">
                         <h2 className='text-lg sm:text-xl lg:text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 flex items-center'>
@@ -1307,6 +1467,9 @@
                       
                       {auth.role !== 'Siswa' && (
                          <div className='flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto'>
+                           <button onClick={handleBulkGenerate} className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition-all flex items-center justify-center sm:mr-2">
+                               <i className="fas fa-layer-group mr-2"></i> Bulk Generate AI
+                           </button>
                            <div className='flex items-center bg-slate-50 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm'>
                              <i className="fas fa-users text-slate-400 ml-2 mr-1"></i>
                              <select className='bg-transparent font-bold px-2 py-1 focus:outline-none text-sm text-slate-800 dark:text-slate-200 cursor-pointer w-full' value={selectedRombel} onChange={e => setSelectedRombel(e.target.value)} disabled={auth.role === 'Wali Kelas' && auth.rombelAkses !== 'Semua'}>
@@ -1316,8 +1479,8 @@
                            </div>
                            <div className='flex items-center bg-white dark:bg-slate-800 p-1.5 rounded-xl border border-purple-300 dark:border-purple-700 shadow-sm'>
                              <i className="fas fa-layer-group text-purple-500 ml-2 mr-2"></i>
-                             <select className='bg-transparent font-bold px-1 py-1 w-full sm:w-32 focus:outline-none text-sm text-slate-800 dark:text-slate-200 cursor-pointer' value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)}>
-                               {availableSemesters.map(s => <option key={s} value={s} className="bg-white dark:bg-slate-800">Semester {s}</option>)}
+                             <select className='bg-transparent font-bold px-1 py-1 w-full sm:w-40 focus:outline-none text-sm text-slate-800 dark:text-slate-200 cursor-pointer' value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)}>
+                               {availableSemesters.map(s => <option key={s} value={s} className="bg-white dark:bg-slate-800">Smst {s} ({getKelasLabel(s)})</option>)}
                              </select>
                            </div>
                          </div>
