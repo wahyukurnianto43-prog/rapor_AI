@@ -335,6 +335,7 @@
           const mapelObj = mapelConfig.find(m => m.alias === filterMapel || m.subject === filterMapel);
           if (!mapelObj) return;
           const realMapel = mapelObj.subject;
+          const mapelNameToSend = mapelObj.alias || mapelObj.subject; // AMBIL ALIAS MAPEL
 
           if (!appConfig.openAIApiKey) {
              setMessage({ type: 'error', text: 'OpenAI API Key belum diatur di sistem.' });
@@ -343,7 +344,8 @@
 
           setLoading(true);
           setMessage({ type: 'info', text: 'AI (OpenAI) sedang menganalisis dan menyusun TP...' });
-          callApi('generateTPAI', { mapel: realMapel, semester: selectedSemester, username: loginUser, sessionToken })
+          // KIRIM MAPEL NAME KE BACKEND
+          callApi('generateTPAI', { mapel: realMapel, mapelName: mapelNameToSend, semester: selectedSemester, username: loginUser, sessionToken })
           .then(res => {
               setLoading(false);
               if(res.success) {
@@ -391,6 +393,8 @@
           const mapelObj = mapelConfig.find(m => m.alias === filterMapel || m.subject === filterMapel);
           if (!mapelObj) return;
           const realMapel = mapelObj.subject;
+          const mapelNameToSend = mapelObj.alias || mapelObj.subject; // AMBIL ALIAS MAPEL
+          const kkmToSend = mapelObj.kkm || 75; // AMBIL KKM MAPEL TERPILIH
 
           const sList = selectedRombel === 'Semua' ? dbData : dbData.filter(d => d.Rombel === selectedRombel);
           const colName = 'Sem' + selectedSemester + '_' + realMapel;
@@ -417,7 +421,9 @@
                   await callApi('generateCapaianBatch', {
                       batchData: batch,
                       mapel: realMapel,
+                      mapelName: mapelNameToSend, // KIRIM ALIAS KE AI
                       semester: selectedSemester,
+                      kkm: kkmToSend,             // KIRIM KKM KE AI
                       username: loginUser,
                       sessionToken: sessionToken
                   });
