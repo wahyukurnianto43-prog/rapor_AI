@@ -18,7 +18,8 @@
         appName: 'SERASI', 
         schoolName: 'Sistem Rekap Nilai', 
         npsn: '-', 
-        logoUrl: '' 
+        logoUrl: '',
+        openAIApiKey: '' // Menambahkan placeholder untuk OpenAI API Key
     };
     tailwind.config = {
       darkMode: 'class',
@@ -45,7 +46,7 @@
     // ========================================================================
     // KONFIGURASI API (WAJIB DIISI)
     // ========================================================================
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxlq0578TnhjhFvvUDh5lXMQbWo06rD_Q_mqowRMHziaIX_wpZWoVBL99-GTZHB4qu4Sw/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbz32kGAitYx2MPL8hUZdQjsiLrEAqpfI8wYh-2T6KJCBVaDbYkw0HZ0OR45LK6vjUVklg/exec";
 
     // Fungsi Fetch API Pengganti google.script.run
     const callApi = async (action, data = {}) => {
@@ -293,7 +294,11 @@
          callApi('generateStudentAccounts', { loginUser, sessionToken })
          .then(res => {
              setMessage({ type: res.success ? 'success' : 'error', text: res.message });
-             fetchDashboardData(loginUser, loginPass, false);
+             fetchDashboardData(loginUser, loginPass, false); // Memuat ulang data untuk mendapatkan daftar akun terbaru
+         })
+         .catch(err => {
+             setLoading(false);
+             setMessage({ type: 'error', text: 'Gagal meng-generate akun: ' + err.message });
          });
       };
 
@@ -331,8 +336,13 @@
           if (!mapelObj) return;
           const realMapel = mapelObj.subject;
 
+          if (!appConfig.openAIApiKey) {
+             setMessage({ type: 'error', text: 'OpenAI API Key belum diatur di sistem.' });
+             return;
+          }
+
           setLoading(true);
-          setMessage({ type: 'info', text: 'AI sedang menganalisis dan menyusun TP...' });
+          setMessage({ type: 'info', text: 'AI (OpenAI) sedang menganalisis dan menyusun TP...' });
           callApi('generateTPAI', { mapel: realMapel, semester: selectedSemester, username: loginUser, sessionToken })
           .then(res => {
               setLoading(false);
@@ -373,6 +383,11 @@
              return;
           }
           
+          if (!appConfig.openAIApiKey) {
+             setMessage({ type: 'error', text: 'OpenAI API Key belum diatur di sistem.' });
+             return;
+          }
+
           const mapelObj = mapelConfig.find(m => m.alias === filterMapel || m.subject === filterMapel);
           if (!mapelObj) return;
           const realMapel = mapelObj.subject;
@@ -588,6 +603,7 @@
       const totalTidakLengkap = dashboardDataList.filter(d => d && d['Status Data'] !== 'Lengkap').length;
 
       const hasPendingUsulan = (Array.isArray(drafts) ? drafts : []).some(d => d && String(d.NIS) === String(selectedStudentNIS) && d.Status === 'Pending');
+      
       let bannerStyle = '', bannerTextClass = '', bannerIcon = '', bannerTitle = '', bannerDesc = '', showVerifButton = false;
       if (studentData['Verifikasi Wali'] === 'Selesai') {
           bannerStyle = 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700'; bannerTextClass = 'text-blue-800 dark:text-blue-400'; bannerIcon = 'fa-check-double'; bannerTitle = 'Validasi Final Selesai'; bannerDesc = 'Data nilai Anda telah divalidasi final oleh Wali Kelas dan dikunci permanen.';
@@ -616,7 +632,6 @@
         <div className="flex flex-col sm:flex-row items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 shrink-0">
           <div className="flex items-center text-sm font-medium text-slate-500 dark:text-slate-400 mb-3 sm:mb-0">
             Tampil per
-            {/* PERBAIKAN 3: Option Background Dark Mode Support */}
             <select value={itemsPerPage} onChange={(e) => setItemsPerPage(Number(e.target.value))} className="mx-2 px-2 py-1 border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm cursor-pointer">
               <option value={10} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">10</option>
               <option value={15} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">15</option>
@@ -720,6 +735,7 @@
                 </div>
               )}
 
+              {}
               {showAccModal && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
                   <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[90vh]">
@@ -749,6 +765,7 @@
                 </div>
               )}
 
+              {}
               {showTpModal && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
                   <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[90vh]">
@@ -869,7 +886,167 @@
                   </div>
                 )}
 
-                {/* TAB: TUJUAN PEMBELAJARAN */}
+                {}
+                {tab === 'semester' && (
+                  <div className='p-4 sm:p-6 lg:p-8 flex flex-col h-full overflow-hidden'>
+                    <div className='flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4 shrink-0'>
+                      <div>
+                        <h2 className='text-2xl font-extrabold text-slate-800 dark:text-white flex items-center'><i className="fas fa-layer-group text-blue-500 mr-3"></i> Data Nilai Per Semester</h2>
+                        <p className="text-sm text-slate-500 mt-1">Lihat dan edit nilai siswa berdasarkan semester.</p>
+                      </div>
+
+                      {/* Filter Controls */}
+                      <div className='flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto'>
+                        {/* Selector Semester */}
+                        <div className="flex bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
+                           {availableSemesters.map(sem => (
+                               <button 
+                                 key={sem} 
+                                 onClick={() => setSelectedSemester(String(sem))}
+                                 className={`px-4 py-2 text-sm font-bold transition-colors focus:outline-none flex-1 sm:flex-none border-r border-slate-200 dark:border-slate-700 last:border-r-0
+                                    ${selectedSemester === String(sem) 
+                                      ? 'bg-blue-600 text-white' 
+                                      : 'bg-transparent text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    }`}
+                               >
+                                 Sem {sem}
+                               </button>
+                           ))}
+                        </div>
+
+                        {/* Filter Rombel & Search (Bukan Siswa) */}
+                        {auth.role !== 'Siswa' && (
+                          <div className='flex items-center gap-2'>
+                             <select className='bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm font-bold shadow-sm focus:outline-none text-slate-800 dark:text-slate-200 cursor-pointer' value={selectedRombel} onChange={e => { setSelectedRombel(e.target.value); setSelectedStudentNIS(''); }} disabled={auth.role === 'Wali Kelas' && auth.rombelAkses !== 'Semua'}>
+                                {auth.role === 'Admin' || auth.rombelAkses === 'Semua' ? <option value="Semua" className="bg-white dark:bg-slate-800">Semua Rombel</option> : null}
+                                {rombels.map(r => <option key={r} value={r} className="bg-white dark:bg-slate-800">Kelas {r}</option>)}
+                             </select>
+                             
+                             <div className="relative">
+                               <i className="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                               <input type="text" placeholder="Cari NIS/Nama..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-9 pr-3 py-2 w-full sm:w-48 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-800 dark:text-slate-200"/>
+                             </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col lg:flex-row gap-6 flex-1 overflow-hidden min-h-0">
+                       {/* Daftar Siswa Sidebar (Hanya Guru/Admin) */}
+                       {auth.role !== 'Siswa' && (
+                         <div className="w-full lg:w-72 flex flex-col bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm overflow-hidden shrink-0">
+                           <div className="bg-slate-50 dark:bg-slate-900 p-3 border-b border-slate-200 dark:border-slate-700 shrink-0">
+                             <div className="font-bold text-slate-700 dark:text-slate-300 text-sm mb-2"><i className="fas fa-users mr-1.5"></i> Daftar Siswa ({filteredData.length})</div>
+                           </div>
+                           <div className="flex-1 overflow-y-auto p-2 space-y-1 hide-scrollbar">
+                              {filteredData.length === 0 ? <p className="text-center text-xs text-slate-400 mt-4">Siswa tidak ditemukan.</p> :
+                              filteredData.map(d => (
+                                 <button key={d.NIS} onClick={() => setSelectedStudentNIS(String(d.NIS))} className={`w-full text-left p-3 rounded-xl transition-all border ${String(d.NIS) === String(selectedStudentNIS) ? 'bg-blue-50 border-blue-200 shadow-sm dark:bg-blue-900/30 dark:border-blue-800' : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}>
+                                     <div className={`font-bold text-sm truncate ${String(d.NIS) === String(selectedStudentNIS) ? 'text-blue-700 dark:text-blue-400' : 'text-slate-700 dark:text-slate-300'}`}>{d['Nama Lengkap']}</div>
+                                     <div className={`text-xs mt-1 font-mono ${String(d.NIS) === String(selectedStudentNIS) ? 'text-blue-500 dark:text-blue-500' : 'text-slate-400 dark:text-slate-500'}`}>{d.NIS} • Kls {d.Rombel}</div>
+                                 </button>
+                              ))}
+                           </div>
+                         </div>
+                       )}
+
+                       {/* Konten Nilai Siswa */}
+                       <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm min-w-0">
+                          {studentData.NIS ? (
+                            <>
+                              {/* Header Profil Siswa */}
+                              <div className="p-4 sm:p-6 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
+                                 <div>
+                                   <h3 className="text-xl font-black text-slate-800 dark:text-white mb-1 truncate" title={studentData['Nama Lengkap']}>{studentData['Nama Lengkap']}</h3>
+                                   <div className="flex flex-wrap items-center gap-2 text-sm">
+                                      <span className="font-mono bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-0.5 rounded font-bold text-slate-600 dark:text-slate-300">NIS: {studentData.NIS}</span>
+                                      <span className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-0.5 rounded font-bold text-slate-600 dark:text-slate-300">Kelas {studentData.Rombel}</span>
+                                      <span className={`px-2.5 py-0.5 rounded font-bold text-xs border ${studentData['Status Data'] === 'Lengkap' ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400' : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400'}`}>Data {studentData['Status Data']}</span>
+                                   </div>
+                                 </div>
+                                 
+                                 {/* Banner Status Persetujuan */}
+                                 {(bannerTitle || bannerDesc) && (
+                                     <div className={`p-3 rounded-xl border max-w-sm w-full sm:w-auto shadow-sm flex items-start ${bannerStyle}`}>
+                                         <i className={`fas ${bannerIcon} text-lg mr-3 mt-0.5 ${bannerTextClass}`}></i>
+                                         <div>
+                                            <div className={`font-bold text-sm ${bannerTextClass}`}>{bannerTitle}</div>
+                                            <div className={`text-xs mt-0.5 opacity-90 ${bannerTextClass}`}>{bannerDesc}</div>
+                                            {showVerifButton && auth.role === 'Siswa' && (
+                                                <button onClick={() => { if(confirm('Apakah Anda yakin semua nilai dari Semester 1 - 6 sudah BENAR? Anda tidak bisa mengedit lagi setelah ini.')) handleVerification(studentData.NIS, 'VERIF_SISWA'); }} className="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 rounded-lg text-xs shadow-sm transition-colors focus:outline-none">Setujui & Kunci Nilai</button>
+                                            )}
+                                         </div>
+                                     </div>
+                                 )}
+                              </div>
+
+                              {/* Tabel Nilai */}
+                              <div className="flex-1 overflow-auto p-4 sm:p-6 table-container relative bg-slate-50/30 dark:bg-slate-900/10">
+                                 <table className="w-full text-left border-collapse">
+                                   <thead>
+                                     <tr className="border-b-2 border-slate-200 dark:border-slate-700">
+                                       <th className="pb-3 px-2 font-extrabold text-slate-500 dark:text-slate-400 uppercase text-xs tracking-wider">Mata Pelajaran</th>
+                                       <th className="pb-3 px-2 font-extrabold text-slate-500 dark:text-slate-400 uppercase text-xs tracking-wider w-32 text-center">Nilai Semester {selectedSemester}</th>
+                                     </tr>
+                                   </thead>
+                                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                     {uniqueSubjects.map((subj, idx) => {
+                                        const colName = `Sem${selectedSemester}_${subj}`;
+                                        const mapelObj = mapelConfig.find(m => m.subject === subj);
+                                        const isWajib = mapelObj ? mapelObj.isIjazah : false;
+                                        
+                                        // Pengecekan apakah nilai kosong dan wajib
+                                        const val = studentData[colName];
+                                        const isKosongWajib = isWajib && (val === undefined || String(val).trim() === '' || isNaN(parseFloat(val))) && !(mapelObj && mapelObj.isToleransi);
+                                        
+                                        // Cek Draft Pending
+                                        const pendingDraft = drafts.find(d => String(d.NIS) === String(studentData.NIS) && d['Kolom Mapel'] === colName && d.Status === 'Pending');
+                                        const isPending = !!pendingDraft;
+                                        const pendingValue = isPending ? pendingDraft['Nilai Baru'] : '';
+                                        const isLockedForUser = lockStatus[studentData.Rombel] || studentData['Verifikasi Siswa'] === 'Selesai';
+                                        
+                                        return (
+                                          <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
+                                            <td className="py-4 px-2">
+                                               <div className="font-bold text-slate-700 dark:text-slate-200 text-sm sm:text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{getMapelAlias(subj)}</div>
+                                               <div className="flex items-center gap-2 mt-1">
+                                                  <span className="text-[10px] text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">Kode: {subj}</span>
+                                                  {isWajib ? <span className="text-[10px] font-bold text-rose-500 bg-rose-50 dark:bg-rose-900/30 px-1.5 py-0.5 rounded border border-rose-100 dark:border-rose-800">Wajib Ijazah</span> : <span className="text-[10px] font-bold text-slate-400 bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">Muatan Lokal</span>}
+                                               </div>
+                                            </td>
+                                            <td className={`py-4 px-2 text-center align-middle ${isKosongWajib ? 'bg-rose-50/50 dark:bg-rose-900/10' : ''}`}>
+                                               <div className="flex justify-center">
+                                                 <EditableCell 
+                                                   value={studentData[colName]} 
+                                                   isPending={isPending} 
+                                                   pendingValue={pendingValue} 
+                                                   isEditedByWali={waliEdits.includes(studentData.NIS + '_' + colName)} 
+                                                   loadingStatus={cellLoading[studentData.NIS + '_' + colName]} 
+                                                   isLocked={isLockedForUser} 
+                                                   onSave={(newVal) => saveCellData(studentData.NIS, colName, studentData[colName], newVal)} 
+                                                 />
+                                               </div>
+                                               {isKosongWajib && <div className="text-[10px] font-bold text-rose-500 mt-1.5 flex items-center justify-center"><i className="fas fa-exclamation-triangle mr-1"></i> Wajib Diisi</div>}
+                                            </td>
+                                          </tr>
+                                        )
+                                     })}
+                                   </tbody>
+                                 </table>
+                              </div>
+                            </>
+                          ) : (
+                             <div className="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 dark:bg-slate-900/20">
+                                <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4"><i className="fas fa-user text-3xl"></i></div>
+                                <p className="font-medium">Pilih siswa dari daftar untuk melihat nilai.</p>
+                             </div>
+                          )}
+                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {}
                 {tab === 'tp' && auth.role !== 'Siswa' && (
                   <div className='p-5 sm:p-6 flex flex-col h-full flex-1 overflow-auto'>
                     <div className='flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 sm:mb-6 gap-4 border-b border-slate-100 dark:border-slate-700 pb-4 shrink-0'>
@@ -887,7 +1064,7 @@
                             </select>
                          </div>
                          <button onClick={handleGenerateTPAI} disabled={loading} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-colors flex items-center justify-center disabled:opacity-50">
-                            <i className="fas fa-robot mr-2"></i> Generate TP AI
+                            <i className="fas fa-robot mr-2"></i> Generate TP AI (OpenAI)
                          </button>
                        </div>
                     </div>
@@ -922,7 +1099,7 @@
                   </div>
                 )}
 
-                {/* TAB: CAPAIAN RAPOR AI */}
+                {}
                 {tab === 'capaian' && auth.role !== 'Siswa' && (
                   <div className='p-5 sm:p-6 flex flex-col h-full flex-1 overflow-auto'>
                     <div className='flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 sm:mb-6 gap-4 border-b border-slate-100 dark:border-slate-700 pb-4 shrink-0'>
@@ -944,7 +1121,7 @@
                             </select>
                          </div>
                          <button onClick={handleBulkGenerateCapaian} disabled={isBulkGenerating || loading} className="w-full sm:w-auto bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-colors flex items-center justify-center disabled:opacity-50 whitespace-nowrap">
-                            {isBulkGenerating ? <><i className="fas fa-spinner fa-spin mr-2"></i> {bulkGenerationProgress}%</> : <><i className="fas fa-cogs mr-2"></i> Bulk Generate AI</>}
+                            {isBulkGenerating ? <><i className="fas fa-spinner fa-spin mr-2"></i> {bulkGenerationProgress}%</> : <><i className="fas fa-cogs mr-2"></i> Bulk AI (OpenAI)</>}
                          </button>
                        </div>
                     </div>
@@ -1005,7 +1182,7 @@
                   </div>
                 )}
 
-                {/* TAB: TABEL MASTER (WALI KELAS & ADMIN) */}
+                {}
                 {tab === 'editor' && auth.role !== 'Siswa' && (
                   <div className='p-4 sm:p-6 flex flex-col h-full flex-1 overflow-auto'>
                     <div className='flex flex-col lg:flex-row justify-between items-start lg:items-center mb-4 sm:mb-5 gap-4 shrink-0'>
@@ -1106,7 +1283,7 @@
                   </div>
                 )}
 
-                {/* TAB: MANAJEMEN MAPEL (ADMIN ONLY) */}
+                {}
                 {tab === 'mapel' && auth.role === 'Admin' && (
                   <div className='p-5 sm:p-8 max-w-5xl mx-auto w-full flex-1 overflow-y-auto'>
                     <div className="mb-6 lg:mb-8 border-b border-slate-100 dark:border-slate-700 pb-4 lg:pb-6">
@@ -1155,7 +1332,7 @@
                     <div className='flex justify-end'><button onClick={handleSaveMapel} disabled={loading || mapelConfig.length===0} className='w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-8 rounded-xl shadow-sm transition-colors focus:outline-none disabled:opacity-50'><i className="fas fa-save mr-2"></i> 2. Simpan Pengaturan Mapel</button></div>
                   </div>
                 )}
-
+                {}
                 {tab === 'sync' && auth.role === 'Admin' && (
                   <div className='p-5 sm:p-8 max-w-4xl mx-auto w-full flex-1 flex flex-col justify-center overflow-y-auto'>
                     <div className="text-center mb-8 sm:mb-10"><div className="inline-flex bg-purple-100 dark:bg-purple-900/30 p-4 rounded-full mb-4"><i className="fas fa-sync text-4xl text-purple-600 dark:text-purple-400"></i></div><h2 className="text-2xl font-extrabold text-slate-800 dark:text-white">Pusat Sinkronisasi</h2><p className="text-slate-500 mt-2">Pusat integrasi data nilai dari berbagai semester.</p></div>
@@ -1163,6 +1340,71 @@
                     <div className='flex flex-col sm:flex-row gap-4'>
                       <button onClick={() => { setLoading(true); callApi('setupDatabase', { username: loginUser, password: loginPass }).then(r => {setLoading(false); alert(r.message);}); }} className='flex-1 bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold py-3.5 sm:py-4 rounded-xl transition-colors shadow-sm focus:outline-none'><i className="fas fa-cogs mr-2"></i> Setup Master Sheet</button>
                       <button onClick={handleSync} className='flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 sm:py-4 rounded-xl transition-colors shadow-sm focus:outline-none'><i className="fas fa-cloud-download-alt mr-2"></i> Sinkronisasi Data Siswa</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Render Tab Akun (Manajemen Akun) */}
+                {tab === 'akun' && auth.role === 'Admin' && (
+                  <div className='p-5 sm:p-8 w-full flex flex-col h-full flex-1 overflow-auto bg-white dark:bg-slate-800'>
+                    <div className='flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 shrink-0'>
+                       <div>
+                         <h2 className='text-xl sm:text-2xl font-extrabold text-slate-800 dark:text-white flex items-center'><i className="fas fa-users-cog text-blue-500 mr-3"></i> Manajemen Akun</h2>
+                         <p className="text-sm text-slate-500 mt-1 font-medium">Kelola akun akses sistem, buat akun otomatis, dan atur peran pengguna.</p>
+                       </div>
+                       <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                         <button onClick={handleGenerateAkunSiswa} disabled={loading} className="w-full sm:w-auto bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition-colors focus:outline-none disabled:opacity-50 whitespace-nowrap"><i className="fas fa-magic mr-2"></i> Generate Akun Siswa</button>
+                         <button onClick={openAddAcc} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl shadow-sm transition-colors focus:outline-none flex items-center justify-center whitespace-nowrap"><i className="fas fa-plus mr-2"></i> Tambah Akun</button>
+                       </div>
+                    </div>
+                    
+                    <div className="mb-6 flex flex-col sm:flex-row justify-between gap-4 shrink-0">
+                       <div className="relative w-full sm:max-w-md">
+                          <i className="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                          <input type="text" placeholder="Cari Username/Nama/Role..." value={searchTermAkun} onChange={e => setSearchTermAkun(e.target.value)} className="pl-11 pr-4 py-2.5 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-slate-700 dark:text-slate-200 shadow-sm transition-all"/>
+                       </div>
+                       <div className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400">Total: {filteredAkunData.length} Akun</div>
+                    </div>
+
+                    <div className='flex-1 overflow-auto border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm table-container'>
+                        <table className='w-full whitespace-nowrap text-sm text-left border-collapse'>
+                           <thead className='text-xs uppercase bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 sticky top-0 z-10 font-extrabold tracking-wider'>
+                              <tr>
+                                 <th className="px-5 py-4 border-b border-slate-200 dark:border-slate-700">Username</th>
+                                 <th className="px-5 py-4 border-b border-slate-200 dark:border-slate-700">Nama Pengguna</th>
+                                 <th className="px-5 py-4 border-b border-slate-200 dark:border-slate-700">Role & Akses</th>
+                                 <th className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 text-center">Status</th>
+                                 <th className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 text-center">Aksi</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {filteredAkunData.length === 0 ? (
+                                 <tr><td colSpan="5" className="text-center py-16 text-slate-500 font-medium bg-white dark:bg-slate-800">Tidak ada data akun.</td></tr>
+                              ) : filteredAkunData.map(acc => (
+                                 <tr key={acc['Username']} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                    <td className="px-5 py-3.5 font-mono font-bold text-slate-700 dark:text-slate-300 border-r border-slate-100 dark:border-slate-700/50">{acc['Username']}</td>
+                                    <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-100 border-r border-slate-100 dark:border-slate-700/50">{acc['Nama Pengguna']}</td>
+                                    <td className="px-5 py-3.5 border-r border-slate-100 dark:border-slate-700/50">
+                                       <span className={`px-2.5 py-1 rounded text-xs font-bold inline-block mr-2 ${acc['Role (Admin/Wali Kelas/Siswa)'] === 'Admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : acc['Role (Admin/Wali Kelas/Siswa)'] === 'Wali Kelas' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'}`}>
+                                          {acc['Role (Admin/Wali Kelas/Siswa)']}
+                                       </span>
+                                       {acc['Role (Admin/Wali Kelas/Siswa)'] === 'Wali Kelas' && <span className="text-[11px] text-slate-500 dark:text-slate-400 font-bold border border-slate-200 dark:border-slate-600 px-1.5 py-0.5 rounded bg-slate-50 dark:bg-slate-800">Rombel: {acc['Rombel Akses'] || '-'}</span>}
+                                    </td>
+                                    <td className="px-5 py-3.5 text-center border-r border-slate-100 dark:border-slate-700/50">
+                                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${String(acc['Status (Active/Inactive)']).toLowerCase() === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
+                                          {acc['Status (Active/Inactive)']}
+                                       </span>
+                                    </td>
+                                    <td className="px-5 py-3.5 text-center space-x-2">
+                                       <button onClick={() => openEditAcc(acc)} className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors focus:outline-none" title="Edit Akun"><i className="fas fa-edit"></i></button>
+                                       {String(acc['Username']).toLowerCase() !== 'admin' && (
+                                          <button onClick={() => handleDeleteAcc(acc['Username'])} className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors focus:outline-none" title="Hapus Akun"><i className="fas fa-trash-alt"></i></button>
+                                       )}
+                                    </td>
+                                 </tr>
+                              ))}
+                           </tbody>
+                        </table>
                     </div>
                   </div>
                 )}
