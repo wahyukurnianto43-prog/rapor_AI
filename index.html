@@ -343,9 +343,16 @@
           }
 
           setLoading(true);
-          setMessage({ type: 'info', text: 'AI (OpenAI) sedang menganalisis dan menyusun TP...' });
-          // KIRIM MAPEL NAME KE BACKEND
-          callApi('generateTPAI', { mapel: realMapel, mapelName: mapelNameToSend, semester: selectedSemester, username: loginUser, sessionToken })
+          setMessage({ type: 'info', text: `AI (OpenAI) sedang menyusun TP untuk ${mapelNameToSend}...` });
+          // PERBAIKAN: Kirim openAIApiKey dan mapelName secara eksplisit ke backend
+          callApi('generateTPAI', { 
+              mapel: realMapel, 
+              mapelName: mapelNameToSend, 
+              semester: selectedSemester, 
+              username: loginUser, 
+              sessionToken: sessionToken,
+              openAIApiKey: appConfig.openAIApiKey 
+          })
           .then(res => {
               setLoading(false);
               if(res.success) {
@@ -418,14 +425,16 @@
           for (let i = 0; i < targets.length; i += BATCH_SIZE) {
               const batch = targets.slice(i, i + BATCH_SIZE);
               try {
+                  // PERBAIKAN: Kirim openAIApiKey, mapelName, dan kkm secara eksplisit
                   await callApi('generateCapaianBatch', {
                       batchData: batch,
                       mapel: realMapel,
-                      mapelName: mapelNameToSend, // KIRIM ALIAS KE AI
+                      mapelName: mapelNameToSend, 
                       semester: selectedSemester,
-                      kkm: kkmToSend,             // KIRIM KKM KE AI
+                      kkm: kkmToSend,             
                       username: loginUser,
-                      sessionToken: sessionToken
+                      sessionToken: sessionToken,
+                      openAIApiKey: appConfig.openAIApiKey 
                   });
                   setBulkGenerationProgress(Math.min(100, Math.round(((i + batch.length) / targets.length) * 100)));
               } catch (e) {
@@ -461,7 +470,16 @@
           .then(res => { setLoading(false); setMessage({ type: res.success ? 'success' : 'error', text: res.message }); }); 
       };
       
-      const handleMapelChange = (idx, field, val) => { const newConfig = [...mapelConfig]; if (field === 'alias') newConfig[idx][field] = val; else newConfig[idx][field] = !newConfig[idx][field]; setMapelConfig(newConfig); };
+      // PERBAIKAN: Menambahkan dukungan untuk field input KKM
+      const handleMapelChange = (idx, field, val) => { 
+          const newConfig = [...mapelConfig]; 
+          if (field === 'alias' || field === 'kkm') {
+              newConfig[idx][field] = val; 
+          } else {
+              newConfig[idx][field] = !newConfig[idx][field]; 
+          }
+          setMapelConfig(newConfig); 
+      };
       
       const handleSync = () => { 
           setLoading(true); setMessage({ type: 'info', text: 'Sinkronisasi berjalan...' }); 
@@ -1312,6 +1330,8 @@
                             <tr>
                                <th className="px-5 py-4 border-r border-slate-200 dark:border-slate-700">Kode Asli (Spreadsheet)</th>
                                <th className="px-5 py-4 border-r border-slate-200 dark:border-slate-700">Nama Tampil di Web (Alias)</th>
+                               {/* PERBAIKAN: Tambah Kolom KKM */}
+                               <th className="px-5 py-4 text-center border-r border-slate-200 dark:border-slate-700" title="Standar ketuntasan minimal">Batas Bawah (KKM)</th>
                                <th className="px-5 py-4 text-center border-r border-slate-200 dark:border-slate-700" title="Masuk perhitungan Rata-Rata SKL">Masuk Rerata SKL</th>
                                <th className="px-5 py-4 text-center border-r border-slate-200 dark:border-slate-700" title="Menjadi syarat kelengkapan data">Masuk Ijazah (Wajib)</th>
                                <th className="px-5 py-4 text-center" title="Abaikan nilai kosong pada perhitungan status Lengkap">Toleransi Kosong</th>
@@ -1323,6 +1343,10 @@
                                 <td className="px-5 py-3 font-mono text-slate-600 dark:text-slate-300 border-r border-slate-100 dark:border-slate-700/50">{m.subject}</td>
                                 <td className="px-4 py-2 border-r border-slate-100 dark:border-slate-700/50">
                                    <input type="text" value={m.alias || ''} onChange={(e) => handleMapelChange(idx, 'alias', e.target.value)} placeholder="Contoh: Pend. Agama" className="min-w-[180px] w-full sm:w-64 px-3 py-2 border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-bold transition-all text-slate-800 dark:text-slate-100" />
+                                </td>
+                                {/* PERBAIKAN: Input untuk field KKM */}
+                                <td className="px-4 py-2 border-r border-slate-100 dark:border-slate-700/50 text-center">
+                                   <input type="number" value={m.kkm || 75} onChange={(e) => handleMapelChange(idx, 'kkm', Number(e.target.value))} className="w-16 px-2 py-1.5 text-center border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-600 dark:text-indigo-400" title="Masukkan nilai KKM" />
                                 </td>
                                 <td className="px-5 py-3 text-center border-r border-slate-100 dark:border-slate-700/50"><input type="checkbox" checked={m.isSKL} onChange={() => handleMapelChange(idx, 'isSKL', null)} className="w-5 h-5 cursor-pointer checkbox-custom rounded accent-indigo-600" /></td>
                                 <td className="px-5 py-3 text-center border-r border-slate-100 dark:border-slate-700/50"><input type="checkbox" checked={m.isIjazah} onChange={() => handleMapelChange(idx, 'isIjazah', null)} className="w-5 h-5 cursor-pointer checkbox-custom rounded accent-indigo-600" /></td>
