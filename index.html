@@ -45,7 +45,7 @@
     // ========================================================================
     // KONFIGURASI API (WAJIB DIISI)
     // ========================================================================
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbysfIbNZhN7AM2ESNXpOvntXTHgVuAXdxIzdrFMNjByT8vfHC15z13bCFb3jr_cn7aeWg/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxlq0578TnhjhFvvUDh5lXMQbWo06rD_Q_mqowRMHziaIX_wpZWoVBL99-GTZHB4qu4Sw/exec";
 
     // Fungsi Fetch API Pengganti google.script.run
     const callApi = async (action, data = {}) => {
@@ -174,11 +174,11 @@
 
       useEffect(() => {
         if (auth && auth.role === 'Siswa') {
-           setSelectedStudentNIS(auth.username);
+           setSelectedStudentNIS(String(auth.username));
         } else if (tab === 'semester' && auth && auth.role !== 'Siswa') {
            const studentsInRombel = dbData.filter(row => selectedRombel === 'Semua' ? true : row.Rombel === selectedRombel);
-           if (studentsInRombel.length > 0 && (!selectedStudentNIS || !studentsInRombel.find(s => s.NIS === selectedStudentNIS))) {
-              setSelectedStudentNIS(studentsInRombel[0].NIS);
+           if (studentsInRombel.length > 0 && (!selectedStudentNIS || !studentsInRombel.find(s => String(s.NIS) === String(selectedStudentNIS)))) {
+              setSelectedStudentNIS(String(studentsInRombel[0].NIS));
            }
         }
       }, [dbData, selectedRombel, tab, auth]);
@@ -569,7 +569,7 @@
           return term === '' || String(row['Username'] || '').toLowerCase().includes(term) || String(row['Nama Pengguna'] || '').toLowerCase().includes(term) || String(row['Role (Admin/Wali Kelas/Siswa)'] || '').toLowerCase().includes(term);
       });
       const studentsInRombel = (Array.isArray(dbData) ? dbData : []).filter(row => row && (selectedRombel === 'Semua' ? true : row.Rombel === selectedRombel));
-      const studentData = studentsInRombel.find(row => row && row.NIS === selectedStudentNIS) || {};
+      const studentData = studentsInRombel.find(row => row && String(row.NIS) === String(selectedStudentNIS)) || {};
       const safeHeaders = Array.isArray(headers) ? headers : [];
       const uniqueSubjects = [...new Set(safeHeaders.filter(h => h && typeof h === 'string' && h.startsWith('Sem')).map(h => h.split('_').slice(1).join('_')))];
 
