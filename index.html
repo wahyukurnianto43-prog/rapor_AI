@@ -19,7 +19,11 @@
         schoolName: 'Sistem Rekap Nilai', 
         npsn: '-', 
         logoUrl: '',
-        openAIApiKey: '' // Menambahkan placeholder untuk OpenAI API Key
+        openAIApiKey: '',
+        templateId: '',
+        tempFolderId: '',
+        pdfFolderId: '',
+        templateUrl: ''
     };
     tailwind.config = {
       darkMode: 'class',
@@ -44,11 +48,10 @@
     const { useState, useEffect } = React;
 
     // ========================================================================
-    // KONFIGURASI API (WAJIB DIISI)
+    // KONFIGURASI API (WAJIB DIISI DENGAN URL WEB APP GAS ANDA)
     // ========================================================================
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzRpD6raIXS7-3tMOyLPr69UL-1Psgj6o5-ZU7_D2w95O4uomoQfThKBWa8rTqFIgrTTw/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzUikWI0If2nSIYvPW0mjODCcWv4YWmJd7hlpYIZ5pAsRjBy2s_lOhV7bvIkQaVAaSYMg/exec";
 
-    // Fungsi Fetch API Pengganti google.script.run
     const callApi = async (action, data = {}) => {
         try {
             const response = await fetch(GAS_API_URL, {
@@ -86,7 +89,6 @@
     };
 
     function App() {
-      // PERBAIKAN 1: Jadikan appConfig sebagai State Dinamis
       const [appConfig, setAppConfig] = useState(window.APP_CONFIG || {});
       const [isDark, setIsDark] = useState(false);
       const [auth, setAuth] = useState(null);
@@ -131,7 +133,7 @@
       const [showTpModal, setShowTpModal] = useState(false);
       const [accForm, setAccForm] = useState({ username: '', password: '', name: '', role: 'Siswa', rombel: '', expDate: '', status: 'Active', isEdit: false, originalUsername: '' });
 
-      // NEW STATES FOR PRINTING / MAIL MERGE
+      // STATE UNTUK CETAK PDF (MAIL MERGE)
       const [printConfig, setPrintConfig] = useState({ templateUrl: '', tempFolderId: '', pdfFolderId: '' });
       const [isPrinting, setIsPrinting] = useState(false);
       const [printProgress, setPrintProgress] = useState(0);
@@ -181,7 +183,6 @@
 
       useEffect(() => { setCurrentPage(1); }, [searchTerm, selectedRombel, selectedSemester, itemsPerPage]);
 
-      // Sync printConfig state dengan appConfig dari database
       useEffect(() => {
           setPrintConfig({
               templateUrl: appConfig.templateUrl || '',
@@ -311,7 +312,7 @@
          callApi('generateStudentAccounts', { loginUser, sessionToken })
          .then(res => {
              setMessage({ type: res.success ? 'success' : 'error', text: res.message });
-             fetchDashboardData(loginUser, loginPass, false); // Memuat ulang data untuk mendapatkan daftar akun terbaru
+             fetchDashboardData(loginUser, loginPass, false); 
          })
          .catch(err => {
              setLoading(false);
@@ -352,7 +353,7 @@
           const mapelObj = mapelConfig.find(m => m.alias === filterMapel || m.subject === filterMapel);
           if (!mapelObj) return;
           const realMapel = mapelObj.subject;
-          const mapelNameToSend = mapelObj.alias || mapelObj.subject; // AMBIL ALIAS MAPEL
+          const mapelNameToSend = mapelObj.alias || mapelObj.subject;
 
           if (!appConfig.openAIApiKey) {
              setMessage({ type: 'error', text: 'OpenAI API Key belum diatur di sistem.' });
@@ -361,7 +362,7 @@
 
           setLoading(true);
           setMessage({ type: 'info', text: `AI (OpenAI) sedang menyusun TP untuk ${mapelNameToSend}...` });
-          // PERBAIKAN: Kirim openAIApiKey dan mapelName secara eksplisit ke backend
+          
           callApi('generateTPAI', { 
               mapel: realMapel, 
               mapelName: mapelNameToSend, 
@@ -417,8 +418,8 @@
           const mapelObj = mapelConfig.find(m => m.alias === filterMapel || m.subject === filterMapel);
           if (!mapelObj) return;
           const realMapel = mapelObj.subject;
-          const mapelNameToSend = mapelObj.alias || mapelObj.subject; // AMBIL ALIAS MAPEL
-          const kkmToSend = mapelObj.kkm || 75; // AMBIL KKM MAPEL TERPILIH
+          const mapelNameToSend = mapelObj.alias || mapelObj.subject; 
+          const kkmToSend = mapelObj.kkm || 75; 
 
           const sList = selectedRombel === 'Semua' ? dbData : dbData.filter(d => d.Rombel === selectedRombel);
           const colName = 'Sem' + selectedSemester + '_' + realMapel;
@@ -442,7 +443,6 @@
           for (let i = 0; i < targets.length; i += BATCH_SIZE) {
               const batch = targets.slice(i, i + BATCH_SIZE);
               try {
-                  // PERBAIKAN: Kirim openAIApiKey, mapelName, dan kkm secara eksplisit
                   await callApi('generateCapaianBatch', {
                       batchData: batch,
                       mapel: realMapel,
@@ -487,7 +487,6 @@
           .then(res => { setLoading(false); setMessage({ type: res.success ? 'success' : 'error', text: res.message }); }); 
       };
       
-      // PERBAIKAN: Menambahkan dukungan untuk field input KKM
       const handleMapelChange = (idx, field, val) => { 
           const newConfig = [...mapelConfig]; 
           if (field === 'alias' || field === 'kkm') {
@@ -538,7 +537,6 @@
             } else {
                if (auth.role === 'Wali Kelas' && !waliEdits.includes(key)) setWaliEdits(prev => [...prev, key]);
                
-               // Update Master Data state lokal
                setDbData(prev => prev.map(row => {
                   if (row.NIS === nis) {
                      const updatedRow = {...row, [colName]: newVal, 'Rerata Akhir SKL': res.newRerataSKL, 'Rerata Akhir Ijazah': res.newRerataIjazah, 'Status Data': res.newStatusData};
@@ -547,7 +545,6 @@
                   return row;
                }));
 
-               // PERBAIKAN 2: Filter/Hapus row dari Data Incomplete jika status sudah Lengkap
                if (res.newStatusData === 'Lengkap') {
                    setIncDbData(prev => prev.filter(item => item.NIS !== nis));
                }
@@ -556,10 +553,12 @@
         });
       };
 
-      // FUNGSI EKSTRAK ID & CETAK PDF
+      // ====================================================================
+      // LOGIKA CETAK PDF (MAIL MERGE)
+      // ====================================================================
       const extractDriveId = (input) => {
           if (!input) return '';
-          const match = input.match(/[-\w]{25,}/); // Deteksi ID Google Drive standar dari URL
+          const match = input.match(/[-\w]{25,}/); 
           return match ? match[0] : input;
       };
 
@@ -585,7 +584,7 @@
           const pdfFolderId = extractDriveId(printConfig.pdfFolderId) || appConfig.pdfFolderId;
 
           if (!templateId || !tempFolderId || !pdfFolderId) {
-              setMessage({ type: 'error', text: 'Konfigurasi URL/ID Google Docs & Drive belum lengkap! Silakan isi kolom konfigurasi (Admin).' });
+              setMessage({ type: 'error', text: 'Konfigurasi URL/ID Google Docs & Drive belum lengkap! Silakan isi di kolom Konfigurasi (Admin).' });
               return;
           }
 
@@ -595,7 +594,7 @@
               return;
           }
 
-          if(!confirm(`Mulai cetak PDF untuk ${targets.length} siswa di Kelas ${selectedRombel}? Proses ini akan dilakukan bertahap agar tidak timeout.`)) return;
+          if(!confirm(`Mulai cetak PDF untuk ${targets.length} siswa di Kelas ${selectedRombel}? Proses akan memakan waktu beberapa menit.`)) return;
 
           setIsPrinting(true);
           setPrintTotal(targets.length);
@@ -603,11 +602,10 @@
           setPrintLogs([]);
           setPdfLinks([]);
 
-          // PROSES REKURSIF (Satu per satu) AGAR TIDAK TERKENA TIMEOUT GOOGLE
+          // Antrean Proses (Batch Rekursif)
           for (let i = 0; i < targets.length; i++) {
               const student = targets[i];
               try {
-                  // Log diletakkan di array paling atas agar yang terbaru terlihat di atas
                   setPrintLogs(prev => [`[PROSES] Generate PDF rapor ${student['Nama Lengkap']} (${student.NIS})...`, ...prev]);
                   
                   const res = await callApi('generateSinglePDF', {
@@ -634,6 +632,7 @@
           setIsPrinting(false);
           setPrintLogs(prev => [`[SELESAI] Proses Mail Merge PDF rombel ${selectedRombel} telah selesai.`, ...prev]);
       };
+      // ====================================================================
 
       const getMapelAlias = (rawSubjectCode) => { 
           if (!rawSubjectCode) return '';
@@ -804,6 +803,7 @@
                  : <NavItem id="validasi" icon="fa-clipboard-check" label="Validasi & Riwayat" badge={pendingDraftsCount} />
                }
 
+               {/* MENU KURIKULUM & AI TERMASUK CETAK RAPOR PDF */}
                {auth.role !== 'Siswa' && (
                  <>
                    <div className={'px-3 mt-6 mb-2 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest transition-opacity duration-200 ' + (isSidebarOpen ? 'opacity-100 block' : 'opacity-0 hidden')}>Kurikulum & AI</div>
@@ -856,6 +856,7 @@
                 </div>
               )}
 
+              {/* SEMUA MODAL POPUP DI SINI */}
               {showAccModal && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
                   <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[90vh]">
@@ -868,7 +869,6 @@
                         <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Password <span className="text-red-500">*</span></label><input type="text" required value={accForm.password} onChange={e=>setAccForm({...accForm, password: e.target.value})} className="w-full p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white" /></div>
                         <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Nama Pengguna <span className="text-red-500">*</span></label><input type="text" required value={accForm.name} onChange={e=>setAccForm({...accForm, name: e.target.value})} className="w-full p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white" /></div>
                         <div className="grid grid-cols-2 gap-4">
-                           {/* PERBAIKAN 3: Option Background Dark Mode Support */}
                            <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Role <span className="text-red-500">*</span></label><select value={accForm.role} onChange={e=>setAccForm({...accForm, role: e.target.value})} className="w-full p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white"><option value="Siswa" className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Siswa</option><option value="Wali Kelas" className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Wali Kelas</option><option value="Admin" className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Admin</option></select></div>
                            <div><label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Rombel Akses</label><input type="text" value={accForm.rombel} onChange={e=>setAccForm({...accForm, rombel: e.target.value})} placeholder="Misal: 9A / Semua" className="w-full p-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 dark:text-white" /></div>
                         </div>
@@ -1291,6 +1291,122 @@
                   </div>
                 )}
 
+                {/* TAB BARU: CETAK RAPOR PDF (MAIL MERGE) - ADA DI SINI */}
+                {tab === 'cetak' && auth.role !== 'Siswa' && (
+                   <div className='p-5 sm:p-8 flex flex-col h-full flex-1 overflow-auto bg-white dark:bg-slate-800'>
+                      <div className='flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4 shrink-0 border-b border-slate-100 dark:border-slate-700 pb-4'>
+                         <div>
+                            <h2 className='text-xl sm:text-2xl font-extrabold text-slate-800 dark:text-white flex items-center'><i className="fas fa-print text-indigo-500 mr-3"></i> Cetak Rapor (PDF)</h2>
+                            <p className="text-sm text-slate-500 mt-1 font-medium">Sistem mail merge otomatis menggunakan template Google Docs dan konversi ke PDF.</p>
+                         </div>
+                         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                            <select className='bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold shadow-sm focus:outline-none w-full sm:w-auto text-slate-800 dark:text-slate-200' value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)}>
+                               {[1,2,3,4,5,6].map(s => <option key={s} value={s} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Semester {s}</option>)}
+                            </select>
+                            <select className='bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold shadow-sm focus:outline-none w-full sm:w-auto text-slate-800 dark:text-slate-200' value={selectedRombel} onChange={e => setSelectedRombel(e.target.value)} disabled={auth.role === 'Wali Kelas' && auth.rombelAkses !== 'Semua'}>
+                               {auth.role === 'Admin' || auth.rombelAkses === 'Semua' ? <option value="Semua" className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Semua Rombel</option> : null}
+                               {rombels.map(r => <option key={r} value={r} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Kelas {r}</option>)}
+                            </select>
+                            <button onClick={handlePrintRombel} disabled={isPrinting || loading} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-colors flex items-center justify-center disabled:opacity-50">
+                               {isPrinting ? <><i className="fas fa-spinner fa-spin mr-2"></i> Memproses Batch...</> : <><i className="fas fa-file-pdf mr-2"></i> Mulai Cetak PDF</>}
+                            </button>
+                         </div>
+                      </div>
+
+                      <div className="flex flex-col lg:flex-row gap-6">
+                         {/* Kolom Kiri: Konfigurasi (Khusus Admin) */}
+                         {auth.role === 'Admin' && (
+                             <div className="w-full lg:w-1/3 flex flex-col gap-4">
+                                <div className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800/50 p-5 rounded-2xl shadow-sm">
+                                   <h3 className="font-extrabold text-indigo-800 dark:text-indigo-300 mb-4 flex items-center"><i className="fas fa-cogs mr-2"></i> Konfigurasi Template Server</h3>
+                                   <div className="space-y-4">
+                                      <div>
+                                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">URL Google Docs (Template Rapor)</label>
+                                         <input type="text" value={printConfig.templateUrl} onChange={e => setPrintConfig({...printConfig, templateUrl: e.target.value})} placeholder="https://docs.google.com/document/d/..." className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800 dark:text-slate-200" />
+                                      </div>
+                                      <div>
+                                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">URL / ID Folder Google Drive Sementara</label>
+                                         <input type="text" value={printConfig.tempFolderId} onChange={e => setPrintConfig({...printConfig, tempFolderId: e.target.value})} placeholder="ID Folder penampung doc processing..." className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800 dark:text-slate-200" />
+                                      </div>
+                                      <div>
+                                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">URL / ID Folder Google Drive Hasil (PDF)</label>
+                                         <input type="text" value={printConfig.pdfFolderId} onChange={e => setPrintConfig({...printConfig, pdfFolderId: e.target.value})} placeholder="ID Folder penyimpan hasil akhir PDF..." className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800 dark:text-slate-200" />
+                                      </div>
+                                      <button onClick={handleSavePrintConfig} disabled={loading} className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-lg text-sm shadow-sm transition-colors focus:outline-none disabled:opacity-50"><i className="fas fa-save mr-2"></i> Simpan Konfigurasi</button>
+                                   </div>
+                                </div>
+                                <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 p-4 rounded-2xl shadow-sm">
+                                    <h4 className="font-bold text-slate-700 dark:text-slate-300 text-xs mb-2 uppercase tracking-wide"><i className="fas fa-info-circle mr-1"></i> Catatan</h4>
+                                    <ul className="text-xs text-slate-500 list-disc list-inside space-y-1">
+                                        <li>Anda dapat menyalin/menempelkan **URL Penuh** langsung pada kolom di atas, sistem akan mendeteksi ID secara otomatis.</li>
+                                        <li>Proses akan dilakukan menggunakan pola antrean batch (1 per 1) di background untuk menghindari Time-out (batas eksekusi server Google 6 Menit).</li>
+                                    </ul>
+                                </div>
+                             </div>
+                         )}
+
+                         {/* Kolom Kanan: Log & Hasil Print */}
+                         <div className={`w-full ${auth.role === 'Admin' ? 'lg:w-2/3' : 'lg:w-full'} flex flex-col gap-4`}>
+                             {/* Progress Tracker */}
+                             {isPrinting && (
+                                <div className="bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 p-4 rounded-2xl shadow-sm">
+                                   <div className="flex justify-between text-xs font-bold text-indigo-700 dark:text-indigo-400 mb-2">
+                                       <span><i className="fas fa-print mr-1.5"></i> Sedang memproses PDF via Server Google Apps Script...</span>
+                                       <span>{printProgress} / {printTotal} Siswa ({Math.round((printProgress/printTotal)*100)}%)</span>
+                                   </div>
+                                   <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
+                                       <div className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" style={{width: `${(printProgress/printTotal)*100}%`}}></div>
+                                   </div>
+                                </div>
+                             )}
+
+                             {/* Console Log Area */}
+                             {(printLogs.length > 0 || pdfLinks.length > 0) && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                   <div className="bg-slate-900 dark:bg-black rounded-2xl p-4 shadow-inner flex flex-col h-80 border border-slate-700">
+                                      <h4 className="text-slate-300 text-xs font-bold mb-3 uppercase tracking-wider flex items-center"><i className="fas fa-terminal mr-2 text-emerald-500"></i> Terminal Log</h4>
+                                      <div className="flex-1 overflow-y-auto text-xs font-mono space-y-1.5 text-slate-400 hide-scrollbar flex flex-col-reverse">
+                                         {printLogs.map((log, i) => (
+                                            <div key={i} className={`${log.includes('[SUKSES]') ? 'text-emerald-400' : log.includes('[ERROR]') || log.includes('[GAGAL]') ? 'text-rose-400' : log.includes('[SELESAI]') ? 'text-blue-400 font-bold mt-2' : 'text-slate-400'}`}>{log}</div>
+                                         ))}
+                                      </div>
+                                   </div>
+
+                                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col h-80">
+                                      <h4 className="text-slate-700 dark:text-slate-300 text-xs font-bold mb-3 uppercase tracking-wider flex items-center justify-between">
+                                         <span><i className="fas fa-file-pdf mr-2 text-red-500"></i> Hasil Unduhan PDF</span>
+                                         <span className="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 px-2 py-0.5 rounded-full">{pdfLinks.length} File</span>
+                                      </h4>
+                                      <div className="flex-1 overflow-y-auto space-y-2 hide-scrollbar">
+                                         {pdfLinks.length === 0 ? <div className="text-xs text-slate-400 text-center py-10 italic">Belum ada file PDF yang selesai digenerate.</div> : 
+                                         pdfLinks.map((pdf, i) => (
+                                            <a key={i} href={pdf.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900/50 hover:bg-red-50 dark:hover:bg-red-900/20 border border-slate-100 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-800 rounded-xl transition-all group">
+                                               <div className="flex flex-col">
+                                                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200 group-hover:text-red-700 dark:group-hover:text-red-400 truncate max-w-[200px]">{pdf.nama}</span>
+                                                  <span className="text-[10px] font-mono text-slate-500">{pdf.nis}</span>
+                                               </div>
+                                               <i className="fas fa-external-link-alt text-slate-400 group-hover:text-red-500"></i>
+                                            </a>
+                                         ))}
+                                      </div>
+                                   </div>
+                                </div>
+                             )}
+
+                             {(!isPrinting && printLogs.length === 0) && (
+                                 <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                                     <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mb-4 text-indigo-500">
+                                         <i className="fas fa-print text-4xl"></i>
+                                     </div>
+                                     <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Siap Mencetak Rapor</h3>
+                                     <p className="text-sm text-slate-500 max-w-md">Pastikan konfigurasi template dan folder sudah terisi. Pilih rombel dan semester, lalu tekan tombol <b>Mulai Cetak PDF</b> untuk menjadwalkan antrean ke sistem backend.</p>
+                                 </div>
+                             )}
+                         </div>
+                      </div>
+                   </div>
+                )}
+
                 {/* TAB: TABEL MASTER (WALI KELAS & ADMIN) */}
                 {tab === 'editor' && auth.role !== 'Siswa' && (
                   <div className='p-4 sm:p-6 flex flex-col h-full flex-1 overflow-auto'>
@@ -1458,7 +1574,7 @@
                   </div>
                 )}
 
-                {/* Render Tab Akun (Manajemen Akun) */}
+                {/* TAB: MANAJEMEN AKUN */}
                 {tab === 'akun' && auth.role === 'Admin' && (
                   <div className='p-5 sm:p-8 w-full flex flex-col h-full flex-1 overflow-auto bg-white dark:bg-slate-800'>
                     <div className='flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 shrink-0'>
@@ -1527,122 +1643,6 @@
                        </table>
                     </div>
                   </div>
-                )}
-
-                {/* TAB BARU: CETAK RAPOR PDF (MAIL MERGE) */}
-                {tab === 'cetak' && auth.role !== 'Siswa' && (
-                   <div className='p-5 sm:p-8 flex flex-col h-full flex-1 overflow-auto bg-white dark:bg-slate-800'>
-                      <div className='flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4 shrink-0 border-b border-slate-100 dark:border-slate-700 pb-4'>
-                         <div>
-                            <h2 className='text-xl sm:text-2xl font-extrabold text-slate-800 dark:text-white flex items-center'><i className="fas fa-print text-indigo-500 mr-3"></i> Cetak Rapor (PDF)</h2>
-                            <p className="text-sm text-slate-500 mt-1 font-medium">Sistem mail merge otomatis menggunakan template Google Docs dan konversi ke PDF.</p>
-                         </div>
-                         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                            <select className='bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold shadow-sm focus:outline-none w-full sm:w-auto text-slate-800 dark:text-slate-200' value={selectedSemester} onChange={e => setSelectedSemester(e.target.value)}>
-                               {[1,2,3,4,5,6].map(s => <option key={s} value={s} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Semester {s}</option>)}
-                            </select>
-                            <select className='bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold shadow-sm focus:outline-none w-full sm:w-auto text-slate-800 dark:text-slate-200' value={selectedRombel} onChange={e => setSelectedRombel(e.target.value)} disabled={auth.role === 'Wali Kelas' && auth.rombelAkses !== 'Semua'}>
-                               {auth.role === 'Admin' || auth.rombelAkses === 'Semua' ? <option value="Semua" className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Semua Rombel</option> : null}
-                               {rombels.map(r => <option key={r} value={r} className="bg-white dark:bg-slate-800 text-slate-900 dark:text-white">Kelas {r}</option>)}
-                            </select>
-                            <button onClick={handlePrintRombel} disabled={isPrinting || loading} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-colors flex items-center justify-center disabled:opacity-50">
-                               {isPrinting ? <><i className="fas fa-spinner fa-spin mr-2"></i> Memproses Batch...</> : <><i className="fas fa-file-pdf mr-2"></i> Mulai Cetak PDF</>}
-                            </button>
-                         </div>
-                      </div>
-
-                      <div className="flex flex-col lg:flex-row gap-6">
-                         {/* Kolom Kiri: Konfigurasi (Khusus Admin) */}
-                         {auth.role === 'Admin' && (
-                             <div className="w-full lg:w-1/3 flex flex-col gap-4">
-                                <div className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800/50 p-5 rounded-2xl shadow-sm">
-                                   <h3 className="font-extrabold text-indigo-800 dark:text-indigo-300 mb-4 flex items-center"><i className="fas fa-cogs mr-2"></i> Konfigurasi Template Server</h3>
-                                   <div className="space-y-4">
-                                      <div>
-                                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">URL Google Docs (Template Rapor)</label>
-                                         <input type="text" value={printConfig.templateUrl} onChange={e => setPrintConfig({...printConfig, templateUrl: e.target.value})} placeholder="https://docs.google.com/document/d/..." className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800 dark:text-slate-200" />
-                                      </div>
-                                      <div>
-                                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">URL / ID Folder Google Drive Sementara</label>
-                                         <input type="text" value={printConfig.tempFolderId} onChange={e => setPrintConfig({...printConfig, tempFolderId: e.target.value})} placeholder="ID Folder penampung doc processing..." className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800 dark:text-slate-200" />
-                                      </div>
-                                      <div>
-                                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">URL / ID Folder Google Drive Hasil (PDF)</label>
-                                         <input type="text" value={printConfig.pdfFolderId} onChange={e => setPrintConfig({...printConfig, pdfFolderId: e.target.value})} placeholder="ID Folder penyimpan hasil akhir PDF..." className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-medium text-slate-800 dark:text-slate-200" />
-                                      </div>
-                                      <button onClick={handleSavePrintConfig} disabled={loading} className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-lg text-sm shadow-sm transition-colors focus:outline-none disabled:opacity-50"><i className="fas fa-save mr-2"></i> Simpan Konfigurasi</button>
-                                   </div>
-                                </div>
-                                <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 p-4 rounded-2xl shadow-sm">
-                                    <h4 className="font-bold text-slate-700 dark:text-slate-300 text-xs mb-2 uppercase tracking-wide"><i className="fas fa-info-circle mr-1"></i> Catatan</h4>
-                                    <ul className="text-xs text-slate-500 list-disc list-inside space-y-1">
-                                        <li>Anda dapat menyalin/menempelkan **URL Penuh** langsung pada kolom di atas, sistem akan mendeteksi ID secara otomatis.</li>
-                                        <li>Proses akan dilakukan menggunakan pola antrean batch (1 per 1) di background untuk menghindari Time-out (batas eksekusi server Google 6 Menit).</li>
-                                    </ul>
-                                </div>
-                             </div>
-                         )}
-
-                         {/* Kolom Kanan: Log & Hasil Print */}
-                         <div className={`w-full ${auth.role === 'Admin' ? 'lg:w-2/3' : 'lg:w-full'} flex flex-col gap-4`}>
-                             {/* Progress Tracker */}
-                             {isPrinting && (
-                                <div className="bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-800 p-4 rounded-2xl shadow-sm">
-                                   <div className="flex justify-between text-xs font-bold text-indigo-700 dark:text-indigo-400 mb-2">
-                                       <span><i className="fas fa-print mr-1.5"></i> Sedang memproses PDF via Server Google Apps Script...</span>
-                                       <span>{printProgress} / {printTotal} Siswa ({Math.round((printProgress/printTotal)*100)}%)</span>
-                                   </div>
-                                   <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
-                                       <div className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" style={{width: `${(printProgress/printTotal)*100}%`}}></div>
-                                   </div>
-                                </div>
-                             )}
-
-                             {/* Console Log Area */}
-                             {(printLogs.length > 0 || pdfLinks.length > 0) && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                   <div className="bg-slate-900 dark:bg-black rounded-2xl p-4 shadow-inner flex flex-col h-80 border border-slate-700">
-                                      <h4 className="text-slate-300 text-xs font-bold mb-3 uppercase tracking-wider flex items-center"><i className="fas fa-terminal mr-2 text-emerald-500"></i> Terminal Log</h4>
-                                      <div className="flex-1 overflow-y-auto text-xs font-mono space-y-1.5 text-slate-400 hide-scrollbar flex flex-col-reverse">
-                                         {printLogs.map((log, i) => (
-                                            <div key={i} className={`${log.includes('[SUKSES]') ? 'text-emerald-400' : log.includes('[ERROR]') || log.includes('[GAGAL]') ? 'text-rose-400' : log.includes('[SELESAI]') ? 'text-blue-400 font-bold mt-2' : 'text-slate-400'}`}>{log}</div>
-                                         ))}
-                                      </div>
-                                   </div>
-
-                                   <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm flex flex-col h-80">
-                                      <h4 className="text-slate-700 dark:text-slate-300 text-xs font-bold mb-3 uppercase tracking-wider flex items-center justify-between">
-                                         <span><i className="fas fa-file-pdf mr-2 text-red-500"></i> Hasil Unduhan PDF</span>
-                                         <span className="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 px-2 py-0.5 rounded-full">{pdfLinks.length} File</span>
-                                      </h4>
-                                      <div className="flex-1 overflow-y-auto space-y-2 hide-scrollbar">
-                                         {pdfLinks.length === 0 ? <div className="text-xs text-slate-400 text-center py-10 italic">Belum ada file PDF yang selesai digenerate.</div> : 
-                                         pdfLinks.map((pdf, i) => (
-                                            <a key={i} href={pdf.url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900/50 hover:bg-red-50 dark:hover:bg-red-900/20 border border-slate-100 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-800 rounded-xl transition-all group">
-                                               <div className="flex flex-col">
-                                                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200 group-hover:text-red-700 dark:group-hover:text-red-400 truncate max-w-[200px]">{pdf.nama}</span>
-                                                  <span className="text-[10px] font-mono text-slate-500">{pdf.nis}</span>
-                                               </div>
-                                               <i className="fas fa-external-link-alt text-slate-400 group-hover:text-red-500"></i>
-                                            </a>
-                                         ))}
-                                      </div>
-                                   </div>
-                                </div>
-                             )}
-
-                             {(!isPrinting && printLogs.length === 0) && (
-                                 <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
-                                     <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mb-4 text-indigo-500">
-                                         <i className="fas fa-print text-4xl"></i>
-                                     </div>
-                                     <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">Siap Mencetak Rapor</h3>
-                                     <p className="text-sm text-slate-500 max-w-md">Pastikan konfigurasi template dan folder sudah terisi. Pilih rombel dan semester, lalu tekan tombol <b>Mulai Cetak PDF</b> untuk menjadwalkan antrean ke sistem backend.</p>
-                                 </div>
-                             )}
-                         </div>
-                      </div>
-                   </div>
                 )}
 
               </div>
